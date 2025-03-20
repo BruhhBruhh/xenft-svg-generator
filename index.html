@@ -4,11 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>XENFT Dynamic SVG Generator</title>
-    <!-- Ethers.js for Ethereum interactions -->
-    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
-    <!-- WalletConnect Web3Modal for better wallet support -->
-    <script src="https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
-    <script src="https://unpkg.com/web3modal@1.9.9/dist/index.js"></script>
+    <!-- No Ethereum libraries loaded on page load -->
     <!-- Custom CSS -->
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -125,85 +121,127 @@
             const galleryView = document.getElementById('galleryView');
             const galleryContainer = document.getElementById('galleryContainer');
             
-            // Switch to View tab
-            viewTab.addEventListener('click', function() {
-                viewTab.classList.add('active');
-                galleryTab.classList.remove('active');
-                mainView.classList.remove('hidden');
-                galleryView.classList.add('hidden');
-            });
-            
-            // Switch to Gallery tab
-            galleryTab.addEventListener('click', function() {
-                galleryTab.classList.add('active');
-                viewTab.classList.remove('active');
-                galleryView.classList.remove('hidden');
-                mainView.classList.add('hidden');
+            // Safely check for elements before adding event listeners
+            if (viewTab && galleryTab && mainView && galleryView) {
+                // Switch to View tab
+                viewTab.addEventListener('click', function() {
+                    viewTab.classList.add('active');
+                    galleryTab.classList.remove('active');
+                    mainView.classList.remove('hidden');
+                    galleryView.classList.add('hidden');
+                });
                 
-                // Render gallery
-                renderGallery(galleryContainer);
-            });
+                // Switch to Gallery tab
+                galleryTab.addEventListener('click', function() {
+                    galleryTab.classList.add('active');
+                    viewTab.classList.remove('active');
+                    galleryView.classList.remove('hidden');
+                    mainView.classList.add('hidden');
+                    
+                    // Render gallery if function exists
+                    if (typeof renderGallery === 'function' && galleryContainer) {
+                        renderGallery(galleryContainer);
+                    } else {
+                        console.warn("renderGallery function not available or gallery container not found");
+                    }
+                });
+            }
             
-            // Add gallery styles
-            addGalleryStyles();
+            // Add gallery styles if function exists
+            if (typeof addGalleryStyles === 'function') {
+                addGalleryStyles();
+            } else {
+                console.warn("addGalleryStyles function not available");
+            }
             
             // Add functionality to the download and save buttons
             const downloadSvgBtn = document.getElementById('downloadSvgBtn');
             const downloadPngBtn = document.getElementById('downloadPngBtn');
             const saveToGalleryBtn = document.getElementById('saveToGalleryBtn');
+            const svgContainer = document.getElementById('svgContainer');
             
-            downloadSvgBtn.addEventListener('click', function() {
-                if (!svgContainer.innerHTML) return;
-                
-                const svgContent = svgContainer.innerHTML;
-                const blob = new Blob([svgContent], { type: 'image/svg+xml' });
-                const url = URL.createObjectURL(blob);
-                
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `XENFT-${currentTokenId}.svg`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            });
+            // Make sure we have access to the current token ID variable
+            // This ensures we can access it from the window object if app.js defines it
+            const getCurrentTokenId = function() {
+                return window.currentTokenId || null;
+            };
             
-            downloadPngBtn.addEventListener('click', function() {
-                if (!svgContainer.innerHTML) return;
-                
-                const svgContent = svgContainer.innerHTML;
-                downloadPng(svgContent, currentTokenId);
-            });
+            if (downloadSvgBtn && svgContainer) {
+                downloadSvgBtn.addEventListener('click', function() {
+                    if (!svgContainer.innerHTML) return;
+                    
+                    const svgContent = svgContainer.innerHTML;
+                    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `XENFT-${getCurrentTokenId()}.svg`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                });
+            }
             
-            saveToGalleryBtn.addEventListener('click', function() {
-                if (!svgContainer.innerHTML || !currentTokenId) return;
-                
-                // Get current XENFT data
-                const tokenId = currentTokenId;
-                const vmuCountValue = document.getElementById('vmuCount').textContent;
-                const termValue = document.getElementById('termValue').textContent;
-                const burnedValue = document.getElementById('burnedValue').textContent;
-                const typeValue = document.getElementById('typeValue').textContent;
-                
-                // Create simplified data structure for storage
-                const xenftData = {
-                    tokenId,
-                    vmuCount: parseInt(vmuCountValue),
-                    mintInfo: { term: parseInt(termValue) },
-                    xenBurned: parseInt(burnedValue),
-                    // Add other required properties for getXENFTRarityInfo function
-                    isApex: typeValue.includes('Apex')
-                };
-                
-                // Save to local storage
-                const success = saveXENFTToLocalStorage(xenftData, svgContainer.innerHTML);
-                
-                if (success) {
-                    alert(`XENFT #${tokenId} saved to your gallery!`);
-                } else {
-                    alert('Failed to save XENFT to gallery. Please try again.');
-                }
-            });
+            if (downloadPngBtn && svgContainer && typeof downloadPng === 'function') {
+                downloadPngBtn.addEventListener('click', function() {
+                    if (!svgContainer.innerHTML) return;
+                    
+                    const svgContent = svgContainer.innerHTML;
+                    downloadPng(svgContent, getCurrentTokenId());
+                });
+            } else if (downloadPngBtn) {
+                console.warn("downloadPng function not available");
+                downloadPngBtn.disabled = true;
+            }
+            
+            if (saveToGalleryBtn && svgContainer && typeof saveXENFTToLocalStorage === 'function') {
+                saveToGalleryBtn.addEventListener('click', function() {
+                    const tokenId = getCurrentTokenId();
+                    if (!svgContainer.innerHTML || !tokenId) return;
+                    
+                    // Safely get elements
+                    const vmuCountEl = document.getElementById('vmuCount');
+                    const termValueEl = document.getElementById('termValue');
+                    const burnedValueEl = document.getElementById('burnedValue');
+                    const typeValueEl = document.getElementById('typeValue');
+                    
+                    if (!vmuCountEl || !termValueEl || !burnedValueEl || !typeValueEl) {
+                        console.error("Required elements not found for saving XENFT");
+                        alert('Failed to save XENFT to gallery. Missing element data.');
+                        return;
+                    }
+                    
+                    // Get current XENFT data
+                    const vmuCountValue = vmuCountEl.textContent;
+                    const termValue = termValueEl.textContent;
+                    const burnedValue = burnedValueEl.textContent;
+                    const typeValue = typeValueEl.textContent;
+                    
+                    // Create simplified data structure for storage
+                    const xenftData = {
+                        tokenId,
+                        vmuCount: parseInt(vmuCountValue),
+                        mintInfo: { term: parseInt(termValue) },
+                        xenBurned: parseInt(burnedValue),
+                        // Add other required properties for getXENFTRarityInfo function
+                        isApex: typeValue.includes('Apex')
+                    };
+                    
+                    // Save to local storage
+                    const success = saveXENFTToLocalStorage(xenftData, svgContainer.innerHTML);
+                    
+                    if (success) {
+                        alert(`XENFT #${tokenId} saved to your gallery!`);
+                    } else {
+                        alert('Failed to save XENFT to gallery. Please try again.');
+                    }
+                });
+            } else if (saveToGalleryBtn) {
+                console.warn("saveXENFTToLocalStorage function not available");
+                saveToGalleryBtn.disabled = true;
+            }
         });
     </script>
 </body>
