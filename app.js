@@ -59,31 +59,52 @@ const backgroundColor = document.getElementById('backgroundColor');
 
 // Initialize Web3Modal for wallet connections
 async function initWeb3Modal() {
-    // Dynamically load WalletConnect and Web3Modal scripts
-    await Promise.all([
-        loadScript('https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js'),
-        loadScript('https://unpkg.com/web3modal@1.9.9/dist/index.js')
-    ]);
-    
-    const providerOptions = {
-        walletconnect: {
-            package: WalletConnectProvider.default,
-            options: {
-                rpc: {
-                    8453: "https://mainnet.base.org"
-                },
-                network: "base",
-                chainId: 8453
-            }
+    try {
+        // Dynamically load WalletConnect and Web3Modal scripts sequentially for better reliability
+        console.log("Loading WalletConnect provider...");
+        await loadScript('https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js');
+        
+        console.log("Loading Web3Modal...");
+        await loadScript('https://unpkg.com/web3modal@1.9.9/dist/index.js');
+        
+        // Make sure WalletConnectProvider is available
+        if (!window.WalletConnectProvider) {
+            console.error("WalletConnectProvider not found, trying alternative source");
+            await loadScript('https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js');
         }
-    };
+        
+        // Make sure Web3Modal is available
+        if (!window.Web3Modal) {
+            console.error("Web3Modal not found, trying alternative source");
+            await loadScript('https://cdn.jsdelivr.net/npm/web3modal@1.9.9/dist/index.js');
+        }
+        
+        const providerOptions = {
+            walletconnect: {
+                package: window.WalletConnectProvider.default,
+                options: {
+                    rpc: {
+                        8453: "https://mainnet.base.org"
+                    },
+                    network: "base",
+                    chainId: 8453
+                }
+            }
+        };
 
-    window.web3Modal = new Web3Modal.default({
-        cacheProvider: false,
-        providerOptions,
-        disableInjectedProvider: false, // Allow MetaMask/injected provider
-        theme: "dark"
-    });
+        window.web3Modal = new window.Web3Modal.default({
+            cacheProvider: false,
+            providerOptions,
+            disableInjectedProvider: false, // Allow MetaMask/injected provider
+            theme: "dark"
+        });
+        
+        console.log("Web3Modal initialized successfully");
+    } catch (error) {
+        console.error("Failed to initialize Web3Modal:", error);
+        showError("Failed to load wallet connection components. Please try again or refresh the page.");
+        throw error;
+    }
 }
 
 // Initialize color cycle info
@@ -97,14 +118,36 @@ function updateColorCycleInfo() {
     backgroundColor.style.backgroundColor = colorScheme.background;
 }
 
-// Load scripts dynamically
+// Load scripts dynamically with improved error handling and timeout
 function loadScript(src) {
     return new Promise((resolve, reject) => {
+        // Check if script is already loaded
+        if (document.querySelector(`script[src="${src}"]`)) {
+            resolve();
+            return;
+        }
+        
         const script = document.createElement('script');
         script.src = src;
         script.type = 'application/javascript';
-        script.onload = resolve;
-        script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+        script.crossOrigin = 'anonymous'; // Add CORS support
+        
+        // Set timeout to fail gracefully
+        const timeoutId = setTimeout(() => {
+            reject(new Error(`Script load timeout: ${src}`));
+        }, 10000); // 10 second timeout
+        
+        script.onload = () => {
+            clearTimeout(timeoutId);
+            resolve();
+        };
+        
+        script.onerror = (e) => {
+            clearTimeout(timeoutId);
+            console.error(`Script load error for ${src}:`, e);
+            reject(new Error(`Failed to load script: ${src}`));
+        };
+        
         document.body.appendChild(script);
     });
 }
@@ -113,9 +156,24 @@ function loadScript(src) {
 async function loadEthers() {
     if (ethers) return ethers;
     
-    await loadScript('https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js');
-    ethers = window.ethers;
-    return ethers;
+    // Try a different CDN for ethers
+    try {
+        await loadScript('https://unpkg.com/ethers@5.7.2/dist/ethers.umd.min.js');
+        ethers = window.ethers;
+        return ethers;
+    } catch (error) {
+        console.error("Failed to load ethers from unpkg, trying jsDelivr...");
+        try {
+            await loadScript('https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js');
+            ethers = window.ethers;
+            return ethers;
+        } catch (error2) {
+            console.error("Failed to load ethers from jsDelivr, trying skypack...");
+            await loadScript('https://cdn.skypack.dev/ethers@5.7.2');
+            ethers = window.ethers;
+            return ethers;
+        }
+    }
 }
 
 // Connect to wallet using Web3Modal
@@ -124,19 +182,28 @@ async function connectWallet() {
         showLoading(true);
         hideError();
         
+        console.log("Starting wallet connection process...");
+        
         // Make sure Web3Modal is initialized
         if (!window.web3Modal) {
+            console.log("Web3Modal not initialized, initializing now...");
             await initWeb3Modal();
         }
         
+        console.log("Opening wallet selection modal...");
         // Open Web3Modal to allow user to select wallet
         web3Provider = await window.web3Modal.connect();
+        console.log("Wallet connected successfully");
         
         // Load ethers.js dynamically
+        console.log("Loading ethers.js...");
         await loadEthers();
+        console.log("Ethers.js loaded successfully");
         
         // Handle provider events
+        console.log("Setting up provider event listeners...");
         web3Provider.on("accountsChanged", (accounts) => {
+            console.log("Accounts changed:", accounts);
             if (accounts.length === 0) {
                 // User disconnected their wallet
                 disconnect();
@@ -149,14 +216,23 @@ async function connectWallet() {
         });
         
         web3Provider.on("chainChanged", (chainId) => {
+            console.log("Chain changed:", chainId);
             // Handle chain change - refresh page is best practice
             window.location.reload();
         });
         
+        web3Provider.on("disconnect", (code, reason) => {
+            console.log("Wallet disconnected:", code, reason);
+            disconnect();
+        });
+        
         // Create ethers provider
-        provider = new ethers.providers.Web3Provider(web3Provider);
+        console.log("Creating ethers provider...");
+        provider = new ethers.providers.Web3Provider(web3Provider, "any");
+        console.log("Ethers provider created");
         
         // Check if we're on Base network
+        console.log("Checking network...");
         const network = await provider.getNetwork();
         if (network.chainId !== 8453) {
             // Try to switch to Base
@@ -388,8 +464,16 @@ function updateAccountInfo() {
 
 // Disconnect wallet and reset state
 function disconnect() {
-    if (web3Provider && web3Provider.disconnect) {
-        web3Provider.disconnect();
+    console.log("Disconnecting wallet...");
+    
+    try {
+        if (web3Provider && web3Provider.disconnect) {
+            web3Provider.disconnect();
+        } else if (web3Provider && web3Provider.close) {
+            web3Provider.close();
+        }
+    } catch (error) {
+        console.error("Error during wallet disconnect:", error);
     }
     
     // Reset state
@@ -401,15 +485,17 @@ function disconnect() {
     currentTokenId = null;
     web3Provider = null;
     
-    // Reset UI
-    connectionContainer.classList.remove('hidden');
-    connectedContainer.classList.add('hidden');
-    accountInfo.classList.add('hidden');
-    ownedTokensContainer.classList.add('hidden');
-    xenftCardContainer.classList.add('hidden');
+    // Reset UI safely
+    if (connectionContainer) connectionContainer.classList.remove('hidden');
+    if (connectedContainer) connectedContainer.classList.add('hidden');
+    if (accountInfo) accountInfo.classList.add('hidden');
+    if (ownedTokensContainer) ownedTokensContainer.classList.add('hidden');
+    if (xenftCardContainer) xenftCardContainer.classList.add('hidden');
     
     // Clear any errors
     hideError();
+    
+    console.log("Wallet disconnected successfully");
 }
 
 // Show loading indicator
@@ -468,41 +554,103 @@ function downloadSvg() {
 
 // Initialize the application
 function init() {
+    console.log("Initializing application...");
+    
+    // Check if any required DOM elements are missing
+    const requiredElements = [
+        { el: connectWalletBtn, name: 'connectWalletBtn' },
+        { el: useRpcBtn, name: 'useRpcBtn' },
+        { el: disconnectBtn, name: 'disconnectBtn' },
+        { el: tokenIdInput, name: 'tokenIdInput' },
+        { el: viewTokenBtn, name: 'viewTokenBtn' }
+    ];
+    
+    const missingElements = requiredElements
+        .filter(item => !item.el)
+        .map(item => item.name);
+    
+    if (missingElements.length > 0) {
+        console.error("Missing DOM elements:", missingElements);
+        const errorEl = document.createElement('div');
+        errorEl.className = 'alert alert-danger';
+        errorEl.textContent = `Application initialization error: Missing UI elements: ${missingElements.join(', ')}`;
+        document.body.prepend(errorEl);
+    }
+    
     // Update color cycle information
-    updateColorCycleInfo();
-    
-    // Add event listeners
-    connectWalletBtn.addEventListener('click', async () => {
-        // Initialize Web3Modal only when the button is clicked
-        if (!window.web3Modal) {
-            await initWeb3Modal();
+    try {
+        if (typeof generateColorScheme === 'function') {
+            updateColorCycleInfo();
+        } else {
+            console.warn("generateColorScheme function not found, skipping color cycle update");
         }
-        connectWallet();
-    });
+    } catch (error) {
+        console.error("Error initializing color cycle:", error);
+    }
     
-    useRpcBtn.addEventListener('click', connectToRPC);
-    disconnectBtn.addEventListener('click', disconnect);
-    viewTokenBtn.addEventListener('click', handleViewToken);
+    // Add event listeners with error handling
+    if (connectWalletBtn) {
+        connectWalletBtn.addEventListener('click', async () => {
+            try {
+                if (!window.web3Modal) {
+                    await initWeb3Modal();
+                }
+                await connectWallet();
+            } catch (error) {
+                console.error("Error in connect wallet flow:", error);
+                showError("Failed to connect wallet: " + (error.message || "Unknown error"));
+                showLoading(false);
+            }
+        });
+    }
+    
+    if (useRpcBtn) {
+        useRpcBtn.addEventListener('click', async () => {
+            try {
+                await connectToRPC();
+            } catch (error) {
+                console.error("Error in RPC connection flow:", error);
+                showError("Failed to connect to RPC: " + (error.message || "Unknown error"));
+                showLoading(false);
+            }
+        });
+    }
+    
+    if (disconnectBtn) {
+        disconnectBtn.addEventListener('click', disconnect);
+    }
+    
+    if (viewTokenBtn) {
+        viewTokenBtn.addEventListener('click', handleViewToken);
+    }
     
     // Add download functionality
-    const downloadBtn = document.createElement('button');
-    downloadBtn.id = 'downloadSvgBtn';
-    downloadBtn.className = 'btn btn-secondary mt-4';
-    downloadBtn.textContent = 'Download SVG';
-    downloadBtn.addEventListener('click', downloadSvg);
-    
-    // Add the button if it doesn't exist yet
-    const xenftInfo = xenftCardContainer.querySelector('.xenft-info');
-    if (xenftInfo && !document.getElementById('downloadSvgBtn')) {
-        xenftInfo.appendChild(downloadBtn);
+    try {
+        const downloadBtn = document.createElement('button');
+        downloadBtn.id = 'downloadSvgBtn';
+        downloadBtn.className = 'btn btn-secondary mt-4';
+        downloadBtn.textContent = 'Download SVG';
+        downloadBtn.addEventListener('click', downloadSvg);
+        
+        // Add the button if it doesn't exist yet
+        const xenftInfo = xenftCardContainer ? xenftCardContainer.querySelector('.xenft-info') : null;
+        if (xenftInfo && !document.getElementById('downloadSvgBtn')) {
+            xenftInfo.appendChild(downloadBtn);
+        }
+    } catch (error) {
+        console.error("Error setting up download button:", error);
     }
     
     // Add keyboard support for token input
-    tokenIdInput.addEventListener('keypress', (event) => {
-        if (event.key === 'Enter') {
-            handleViewToken();
-        }
-    });
+    if (tokenIdInput) {
+        tokenIdInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                handleViewToken();
+            }
+        });
+    }
+    
+    console.log("Application initialized successfully");
 }
 
 // Initialize when the DOM is loaded
