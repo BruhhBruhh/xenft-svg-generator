@@ -28,6 +28,7 @@ let xenCryptoContract = null;
 let account = null;
 let ownedTokens = [];
 let currentTokenId = null;
+let web3Provider = null;
 
 // DOM Elements
 const connectWalletBtn = document.getElementById('connectWalletBtn');
@@ -67,7 +68,8 @@ function initWeb3Modal() {
                 rpc: {
                     8453: "https://mainnet.base.org"
                 },
-                network: "base"
+                network: "base",
+                chainId: 8453
             }
         }
     };
@@ -75,7 +77,7 @@ function initWeb3Modal() {
     web3Modal = new Web3Modal.default({
         cacheProvider: false,
         providerOptions,
-        disableInjectedProvider: false,
+        disableInjectedProvider: true, // Disable MetaMask/injected provider
         theme: "dark"
     });
 }
@@ -91,6 +93,18 @@ function updateColorCycleInfo() {
     backgroundColor.style.backgroundColor = colorScheme.background;
 }
 
+// Load ethers.js dynamically to avoid initial loading errors
+async function loadEthers() {
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js';
+        script.type = 'application/javascript';
+        script.onload = () => resolve(window.ethers);
+        script.onerror = () => reject(new Error("Failed to load ethers.js"));
+        document.body.appendChild(script);
+    });
+}
+
 // Connect to wallet using Web3Modal
 async function connectWallet() {
     try {
@@ -98,7 +112,10 @@ async function connectWallet() {
         hideError();
         
         // Open Web3Modal to allow user to select wallet
-        const web3Provider = await web3Modal.connect();
+        web3Provider = await web3Modal.connect();
+        
+        // Load ethers.js dynamically
+        const ethers = await loadEthers();
         
         // Handle provider events
         web3Provider.on("accountsChanged", (accounts) => {
@@ -171,10 +188,10 @@ async function connectWallet() {
         account = accounts[0];
         
         // Initialize contracts
-        initializeContracts();
+        initializeContracts(ethers);
         
         // Fetch owned tokens
-        await fetchOwnedTokens();
+        await fetchOwnedTokens(ethers);
         
         // Update UI
         updateUIOnConnect(true);
@@ -187,16 +204,19 @@ async function connectWallet() {
 }
 
 // Connect to public RPC (view only)
-function connectToRPC() {
+async function connectToRPC() {
     try {
         showLoading(true);
         hideError();
+        
+        // Load ethers.js dynamically
+        const ethers = await loadEthers();
         
         // Connect to Base using public RPC
         provider = new ethers.providers.JsonRpcProvider(RPC_URL);
         
         // Initialize contracts
-        initializeContracts();
+        initializeContracts(ethers);
         
         // Update UI
         updateUIOnConnect(false);
@@ -209,13 +229,13 @@ function connectToRPC() {
 }
 
 // Initialize contract instances
-function initializeContracts() {
+function initializeContracts(ethers) {
     xenftContract = new ethers.Contract(XENFT_ADDRESS, XENFT_ABI, provider);
     xenCryptoContract = new ethers.Contract(XEN_CRYPTO_ADDRESS, XEN_CRYPTO_ABI, provider);
 }
 
 // Fetch tokens owned by the connected address
-async function fetchOwnedTokens() {
+async function fetchOwnedTokens(ethers) {
     if (!account || !xenftContract) return;
     
     try {
@@ -313,8 +333,11 @@ function displayXENFT(xenftData) {
     // Get rarity information
     const rarityInfo = getXENFTRarityInfo(xenftData);
     
-    // Update the SVG
-    svgContainer.innerHTML = generateXENFTSVG(xenftData);
+    // Generate SVG
+    const svg = generateXENFTSVG(xenftData);
+    
+    // Update the SVG container
+    svgContainer.innerHTML = svg;
     
     // Update the info section
     displayTokenId.textContent = xenftData.tokenId;
@@ -345,6 +368,10 @@ function updateAccountInfo() {
 
 // Disconnect wallet and reset state
 function disconnect() {
+    if (web3Provider && web3Provider.disconnect) {
+        web3Provider.disconnect();
+    }
+    
     // Reset state
     provider = null;
     xenftContract = null;
@@ -352,6 +379,7 @@ function disconnect() {
     account = null;
     ownedTokens = [];
     currentTokenId = null;
+    web3Provider = null;
     
     // Reset UI
     connectionContainer.classList.remove('hidden');
@@ -437,7 +465,12 @@ function init() {
     downloadBtn.className = 'btn btn-secondary mt-4';
     downloadBtn.textContent = 'Download SVG';
     downloadBtn.addEventListener('click', downloadSvg);
-    xenftCardContainer.querySelector('.xenft-info').appendChild(downloadBtn);
+    
+    // Add the button if it doesn't exist yet
+    const xenftInfo = xenftCardContainer.querySelector('.xenft-info');
+    if (xenftInfo && !document.getElementById('downloadSvgBtn')) {
+        xenftInfo.appendChild(downloadBtn);
+    }
     
     // Add keyboard support for token input
     tokenIdInput.addEventListener('keypress', (event) => {
