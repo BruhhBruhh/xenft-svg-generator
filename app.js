@@ -18,9 +18,6 @@ const XEN_CRYPTO_ABI = [
     "function userMints(address user) view returns (address user, uint256 term, uint256 maturityTs, uint256 rank, uint256 amplifier, uint256 eaaRate)"
 ];
 
-// Web3Modal instance
-let web3Modal;
-
 // State variables
 let provider = null;
 let xenftContract = null;
@@ -29,6 +26,7 @@ let account = null;
 let ownedTokens = [];
 let currentTokenId = null;
 let web3Provider = null;
+let ethers = null;
 
 // DOM Elements
 const connectWalletBtn = document.getElementById('connectWalletBtn');
@@ -60,7 +58,13 @@ const tertiaryColor = document.getElementById('tertiaryColor');
 const backgroundColor = document.getElementById('backgroundColor');
 
 // Initialize Web3Modal for wallet connections
-function initWeb3Modal() {
+async function initWeb3Modal() {
+    // Dynamically load WalletConnect and Web3Modal scripts
+    await Promise.all([
+        loadScript('https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js'),
+        loadScript('https://unpkg.com/web3modal@1.9.9/dist/index.js')
+    ]);
+    
     const providerOptions = {
         walletconnect: {
             package: WalletConnectProvider.default,
@@ -74,10 +78,10 @@ function initWeb3Modal() {
         }
     };
 
-    web3Modal = new Web3Modal.default({
+    window.web3Modal = new Web3Modal.default({
         cacheProvider: false,
         providerOptions,
-        disableInjectedProvider: true, // Disable MetaMask/injected provider
+        disableInjectedProvider: false, // Allow MetaMask/injected provider
         theme: "dark"
     });
 }
@@ -93,16 +97,25 @@ function updateColorCycleInfo() {
     backgroundColor.style.backgroundColor = colorScheme.background;
 }
 
-// Load ethers.js dynamically to avoid initial loading errors
-async function loadEthers() {
+// Load scripts dynamically
+function loadScript(src) {
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js';
+        script.src = src;
         script.type = 'application/javascript';
-        script.onload = () => resolve(window.ethers);
-        script.onerror = () => reject(new Error("Failed to load ethers.js"));
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
         document.body.appendChild(script);
     });
+}
+
+// Load ethers.js dynamically only when needed
+async function loadEthers() {
+    if (ethers) return ethers;
+    
+    await loadScript('https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js');
+    ethers = window.ethers;
+    return ethers;
 }
 
 // Connect to wallet using Web3Modal
@@ -111,11 +124,16 @@ async function connectWallet() {
         showLoading(true);
         hideError();
         
+        // Make sure Web3Modal is initialized
+        if (!window.web3Modal) {
+            await initWeb3Modal();
+        }
+        
         // Open Web3Modal to allow user to select wallet
-        web3Provider = await web3Modal.connect();
+        web3Provider = await window.web3Modal.connect();
         
         // Load ethers.js dynamically
-        const ethers = await loadEthers();
+        await loadEthers();
         
         // Handle provider events
         web3Provider.on("accountsChanged", (accounts) => {
@@ -188,10 +206,10 @@ async function connectWallet() {
         account = accounts[0];
         
         // Initialize contracts
-        initializeContracts(ethers);
+        initializeContracts();
         
         // Fetch owned tokens
-        await fetchOwnedTokens(ethers);
+        await fetchOwnedTokens();
         
         // Update UI
         updateUIOnConnect(true);
@@ -210,13 +228,13 @@ async function connectToRPC() {
         hideError();
         
         // Load ethers.js dynamically
-        const ethers = await loadEthers();
+        await loadEthers();
         
         // Connect to Base using public RPC
         provider = new ethers.providers.JsonRpcProvider(RPC_URL);
         
         // Initialize contracts
-        initializeContracts(ethers);
+        initializeContracts();
         
         // Update UI
         updateUIOnConnect(false);
@@ -229,13 +247,15 @@ async function connectToRPC() {
 }
 
 // Initialize contract instances
-function initializeContracts(ethers) {
+function initializeContracts() {
+    if (!ethers || !provider) return;
+    
     xenftContract = new ethers.Contract(XENFT_ADDRESS, XENFT_ABI, provider);
     xenCryptoContract = new ethers.Contract(XEN_CRYPTO_ADDRESS, XEN_CRYPTO_ABI, provider);
 }
 
 // Fetch tokens owned by the connected address
-async function fetchOwnedTokens(ethers) {
+async function fetchOwnedTokens() {
     if (!account || !xenftContract) return;
     
     try {
@@ -448,20 +468,25 @@ function downloadSvg() {
 
 // Initialize the application
 function init() {
-    // Initialize Web3Modal
-    initWeb3Modal();
-    
     // Update color cycle information
     updateColorCycleInfo();
     
     // Add event listeners
-    connectWalletBtn.addEventListener('click', connectWallet);
+    connectWalletBtn.addEventListener('click', async () => {
+        // Initialize Web3Modal only when the button is clicked
+        if (!window.web3Modal) {
+            await initWeb3Modal();
+        }
+        connectWallet();
+    });
+    
     useRpcBtn.addEventListener('click', connectToRPC);
     disconnectBtn.addEventListener('click', disconnect);
     viewTokenBtn.addEventListener('click', handleViewToken);
     
     // Add download functionality
     const downloadBtn = document.createElement('button');
+    downloadBtn.id = 'downloadSvgBtn';
     downloadBtn.className = 'btn btn-secondary mt-4';
     downloadBtn.textContent = 'Download SVG';
     downloadBtn.addEventListener('click', downloadSvg);
