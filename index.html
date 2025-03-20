@@ -1,1 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XENFT Dynamic SVG Generator</title>
+    <!-- Ethers.js for Ethereum interactions -->
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js" type="application/javascript"></script>
+    <!-- WalletConnect Web3Modal for better wallet support -->
+    <script src="https://unpkg.com/@walletconnect/web3-provider@1.8.0/dist/umd/index.min.js"></script>
+    <script src="https://unpkg.com/web3modal@1.9.9/dist/index.js"></script>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>XENFT Dynamic SVG Generator</h1>
+            <p class="subtitle">Generate custom SVGs for XENFTs with colors that change every 30 days</p>
+            
+            <div class="color-cycle-info" id="colorCycleInfo">
+                <p><strong>Current Color Cycle: <span id="cycleName">1/12</span></strong></p>
+                <p>Next color change in <span id="daysUntilNextCycle">30</span> days</p>
+                <div class="color-samples">
+                    <div class="color-sample" id="primaryColor" title="Primary"></div>
+                    <div class="color-sample" id="secondaryColor" title="Secondary"></div>
+                    <div class="color-sample" id="tertiaryColor" title="Tertiary"></div>
+                    <div class="color-sample" id="backgroundColor" title="Background"></div>
+                </div>
+            </div>
+        </header>
 
+        <div id="connectionContainer" class="connection-container">
+            <button id="connectWalletBtn" class="btn btn-primary">Connect Wallet</button>
+            <div class="or-divider">or</div>
+            <button id="useRpcBtn" class="btn btn-secondary">Use Public RPC (View Only)</button>
+            <p id="errorMessage" class="error-message hidden"></p>
+            <p id="loadingMessage" class="loading hidden">Connecting...</p>
+        </div>
+
+        <div id="connectedContainer" class="hidden">
+            <div id="accountInfo" class="account-info hidden">
+                <p>Connected: <span id="accountAddress">0x0000...0000</span></p>
+                <p id="ownedTokensCount" class="hidden">You own <span id="tokenCount">0</span> XENFTs</p>
+            </div>
+
+            <div class="input-group">
+                <input type="number" id="tokenIdInput" placeholder="Enter Token ID">
+                <button id="viewTokenBtn" class="btn btn-success">View</button>
+            </div>
+
+            <div id="ownedTokensContainer" class="token-selector hidden">
+                <!-- Token badges will be inserted here dynamically -->
+            </div>
+
+            <div class="text-center">
+                <button id="disconnectBtn" class="btn btn-danger">Disconnect</button>
+            </div>
+
+            <div id="xenftCardContainer" class="hidden">
+                <div class="xenft-card">
+                    <div id="svgContainer">
+                        <!-- SVG will be inserted here -->
+                    </div>
+                    <div class="xenft-info">
+                        <h3>XENFT #<span id="displayTokenId">0</span></h3>
+                        <p>VMUs: <span id="vmuCount">0</span></p>
+                        <p>Term: <span id="termValue">0</span> days</p>
+                        <p>Burned: <span id="burnedValue">0</span> XEN</p>
+                        <p>Type: <span id="typeValue">Common</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import mintInfoDecoder first as other scripts will use it -->
+    <script src="mintInfoDecoder.js"></script>
+    <!-- Main script file -->
+    <script src="app.js"></script>
+</body>
+</html>
